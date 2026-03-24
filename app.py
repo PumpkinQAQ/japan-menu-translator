@@ -1,9 +1,13 @@
 """
-?交???蝧餉陌??擗??雿輻 Streamlit + Gemini AI
+日本旅遊菜單翻譯與點餐助手
+使用 Streamlit + Gemini AI
 
-雿輻?寞?嚗?1. ?函蔡??Streamlit Cloud
-2. ?冽?璈??餉??蝬脣?
-3. ????唾???4. 蝧餉陌 ??暺? ??憿舐內蝮賡?憿?"""
+使用方法：
+1. 部署到 Streamlit Cloud
+2. 在手機/電腦開啟網址
+3. 拍照或上傳菜單
+4. 翻譯 → 點餐 → 顯示總金額
+"""
 
 import streamlit as st
 import google.generativeai as genai
@@ -12,88 +16,96 @@ import io
 import json
 import re
 
-# ?閮剖?
+# 頁面設定
 st.set_page_config(
-    page_title="?? ?交?蝧餉陌暺?",
-    page_icon="??",
+    page_title="Japan Menu Translator",
+    page_icon="fork_and_knife",
     layout="centered"
 )
 
-# 璅?
-st.title("?? ?交???蝧餉陌??擗??)
+# 標題
+st.title("Japan Menu Translator")
 st.markdown("---")
 
-# API Key 頛詨嚗?典??嚗?with st.sidebar:
-    st.header("?? 閮剖?")
-    api_key = st.text_input("頛詨 Gemini API Key", type="password")
-    st.markdown("? 瘝? Key嚗?敺?[Gemini API](https://aistudio.google.com/app/apikey)")
+# API Key 輸入（放在側邊欄）
+with st.sidebar:
+    st.header("⚙️ 設定")
+    api_key = st.text_input("輸入 Gemini API Key", type="password")
+    st.markdown("💡 沒有 Key？取得 [Gemini API](https://aistudio.google.com/app/apikey)")
     st.markdown("---")
     st.markdown("""
-    **雿輻隤芣?嚗?*
-    1. 頛詨 API Key
-    2. ????唾???    3. 暺?蝧餉陌
-    4. ?豢?擗?
-    5. ?亦?蝮賡?憿?    """)
+    **使用說明：**
+    1. 輸入 API Key
+    2. 拍照或上傳菜單
+    3. 點擊翻譯
+    4. 選擇餐點
+    5. 查看總金額
+    """)
 
-# 銝餌?撘?if not api_key:
-    st.info("?? 隢??典椰?渲撓?交??Gemini API Key")
+# 主程式
+if not api_key:
+    st.info("👈 請先在左側輸入您的 Gemini API Key")
     st.image("https://i.imgur.com/JpL1uT5.png", width=300)
     st.stop()
 
-# 閮剖? Gemini
+# 設定 Gemini
 try:
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
-    st.error(f"API Key 閮剖?憭望?嚗e}")
+    st.error(f"API Key 設定失敗：{e}")
     st.stop()
 
-# ????session state
+# 初始化 session state
 if 'menu' not in st.session_state:
     st.session_state['menu'] = []
 if 'order' not in st.session_state:
     st.session_state['order'] = {}
 
-# 1. 銝/?
-st.subheader("? 甇仿?銝嚗??唾???)
+# 1. 上傳/拍照
+st.subheader("📸 步驟一：上傳菜單")
 col1, col2 = st.columns(2)
 with col1:
-    img_file = st.file_uploader("銝??抒?", type=['jpg', 'png', 'jpeg', 'webp'])
+    img_file = st.file_uploader("上傳菜單照片", type=['jpg', 'png', 'jpeg', 'webp'])
 with col2:
-    camera_img = st.camera_input("???找???)
+    camera_img = st.camera_input("或拍照上傳")
 
 img = img_file or camera_img
 
 if img:
     image = Image.open(img)
-    st.image(image, caption="撌脖??喟??", use_column_width=True)
+    st.image(image, caption="已上傳的菜單", use_column_width=True)
 
-    # 2. 蝧餉陌??
+    # 2. 翻譯按鈕
     st.markdown("---")
-    st.subheader("?? 甇仿?鈭?AI 蝧餉陌")
+    st.subheader("🔄 步驟二：AI 翻譯")
     
-    if st.button("?? ??蝧餉陌", type="primary", use_container_width=True):
-        with st.spinner("AI 甇?蝧餉陌銝哨?隢???.."):
+    if st.button("🤖 開始翻譯", type="primary", use_container_width=True):
+        with st.spinner("AI 正在翻譯中，請稍候..."):
             try:
-                prompt = """雿銝??璆剔??交??蝧餉陌?拇???隞敦???撐?交擗輒?????
-隢誑 JSON ?澆?????暺?閮?
+                prompt = """你是一個專業的日本料理翻譯助手。請仔細分析這張日本餐廳菜單圖片。
+
+請以 JSON 格式回傳所有餐點資訊：
 ```json
 {
-  "restaurant_name": "摨?嚗??颲刻恕嚗?,
+  "restaurant_name": "店名（如果可辨认）",
   "items": [
-    {"number": 1, "name_jp": "?交??迂", "name_tw": "蝜?銝剜?蝧餉陌", "price": 蝝摮撟??? "category": "??"}
+    {"number": 1, "name_jp": "日文名稱", "name_tw": "繁體中文翻譯", "price": 純數字日幣價格, "category": "分類"}
   ]
 }
 ```
 
-瘜冽?嚗?1. price ?舀摮??駁??蝑泵??
-2. 憒??臬?擗?撠賡??圾銝餉???
-3. 憒??寞?舐????像???雿?4. category ?舫嚗蜓憌?暻萸?樴熊??押??ˊ?詻?暺ㄡ??憿隞?5. ?芾撓??JSON嚗?閬隞?摮?""
+注意：
+1. price 是數字（去除円、,等符號）
+2. 如果是套餐，尽量拆解主要成分
+3. 如果價格是範圍，取平均或最低值
+4. category 可選：主食、拉麵、烏龍麵、炸物、燒肉、壽司、甜點、飲料、酒類、其他
+5. 只輸出 JSON，不要其他文字"""
 
                 response = model.generate_content([prompt, image])
                 response_text = response.text.strip()
                 
-                # 皜? JSON
+                # 清洗 JSON
                 json_str = re.sub(r'^```json\s*', '', response_text)
                 json_str = re.sub(r'^```\s*', '', json_str)
                 json_str = re.sub(r'\s*```$', '', json_str)
@@ -102,34 +114,36 @@ if img:
                 st.session_state['menu'] = menu_data.get('items', [])
                 
                 if menu_data.get('restaurant_name'):
-                    st.success(f"?儭?颲刻??堆?{menu_data['restaurant_name']}")
+                    st.success(f"🍽️ 辨識到：{menu_data['restaurant_name']}")
                 else:
-                    st.success("??蝧餉陌摰?嚗?)
+                    st.success("✅ 翻譯完成！")
                     
             except json.JSONDecodeError as e:
-                st.error(f"JSON 閫??憭望?嚗e}")
-                st.text("????嚗? + response_text[:500])
+                st.error(f"JSON 解析失敗：{e}")
+                st.text("原始回覆：" + response_text[:500])
             except Exception as e:
-                st.error(f"蝧餉陌憭望?嚗e}")
+                st.error(f"翻譯失敗：{e}")
 
-# 3. 暺?隞
+# 3. 點餐介面
 if st.session_state['menu']:
     st.markdown("---")
-    st.subheader("?儭?甇仿?銝??豢?擗?")
+    st.subheader("🍽️ 步驟三：選擇餐點")
     
-    # ??憿＊蝷?    categories = {}
+    # 按分類顯示
+    categories = {}
     for item in st.session_state['menu']:
-        cat = item.get('category', '?嗡?')
+        cat = item.get('category', '其他')
         if cat not in categories:
             categories[cat] = []
         categories[cat].append(item)
     
-    # ??????    if 'quantities' not in st.session_state:
+    # 初始化訂單
+    if 'quantities' not in st.session_state:
         st.session_state['quantities'] = {item['number']: 0 for item in st.session_state['menu']}
     
-    # 憿舐內擗?
+    # 顯示餐點
     for cat, items in categories.items():
-        with st.expander(f"?? {cat}嚗len(items)}??", expanded=True):
+        with st.expander(f"📁 {cat}（{len(items)}項）", expanded=True):
             for item in items:
                 num = item['number']
                 name_tw = item.get('name_tw', '')
@@ -149,11 +163,11 @@ if st.session_state['menu']:
                         st.caption(f"   {name_jp}")
                 
                 with col2:
-                    st.text(f"瞼{price:,}")
+                    st.text(f"¥{price:,}")
                 
                 with col3:
                     qty = st.number_input(
-                        "?賊?",
+                        "數量",
                         min_value=0,
                         max_value=10,
                         value=st.session_state['quantities'][num],
@@ -164,13 +178,14 @@ if st.session_state['menu']:
                 
                 with col4:
                     if checked and qty > 0:
-                        st.markdown(f"**瞼{price * qty:,}**")
+                        st.markdown(f"**¥{price * qty:,}**")
     
-    # 4. 蝯?
+    # 4. 結算
     st.markdown("---")
-    st.subheader("? 甇仿???蝯?")
+    st.subheader("💰 步驟四：結算")
     
-    # 閮?蝮賡?憿?    total_jpy = 0
+    # 計算總金額
+    total_jpy = 0
     total_items = 0
     ordered_items = []
     
@@ -190,46 +205,46 @@ if st.session_state['menu']:
             })
     
     if ordered_items:
-        # 憿舐內閮?敦
+        # 顯示訂單明細
         for item in ordered_items:
             col1, col2, col3 = st.columns([4, 1, 1])
             with col1:
-                st.text(f"??{item['name']} x {item['qty']}")
+                st.text(f"✅ {item['name']} x {item['qty']}")
             with col2:
-                st.text(f"瞼{item['price']:,}")
+                st.text(f"¥{item['price']:,}")
             with col3:
-                st.markdown(f"**瞼{item['subtotal']:,}**")
+                st.markdown(f"**¥{item['subtotal']:,}**")
         
         st.markdown("---")
         
-        # 蝮質?
+        # 總計
         col1, col2 = st.columns([3, 1])
         with col1:
-            st.markdown(f"### ??{total_items} ??)
+            st.markdown(f"### 共 {total_items} 項")
         with col2:
-            st.markdown(f"### ? 瞼{total_jpy:,}")
+            st.markdown(f"### 💴 ¥{total_jpy:,}")
         
-        # ?啣馳隡啗?
+        # 台幣估計
         rate = st.number_input(
-            "?舐?嚗撟???啣馳嚗?,
+            "匯率（日幣兌台幣）",
             min_value=0.0,
             max_value=1.0,
             value=0.21,
             step=0.01,
             format="%.2f",
-            help="?桀?蝝?0.20-0.22"
+            help="目前約 0.20-0.22"
         )
         
         total_ntd = int(total_jpy * rate)
-        st.success(f"?? 蝝?NT$ {total_ntd:,}")
+        st.success(f"🇹🇼 約 NT$ {total_ntd:,}")
         
-        # 皜??
-        if st.button("??儭?皜閮", type="secondary"):
+        # 清除按鈕
+        if st.button("🗑️ 清除訂單", type="secondary"):
             st.session_state['quantities'] = {item['number']: 0 for item in st.session_state['menu']}
             st.rerun()
     else:
-        st.info("?? 隢銝?豢??刻???暺?)
+        st.info("👆 請在上方選擇您要的餐點")
 
-# 摨
+# 底部
 st.markdown("---")
-st.markdown("Made with ?歹? for ?交?? | 雿輻 Gemini AI 蝧餉陌")
+st.markdown("Made with ❤️ for 日本旅遊 | 使用 Gemini AI 翻譯")
